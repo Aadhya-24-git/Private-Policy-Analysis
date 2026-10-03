@@ -1,0 +1,81 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: fine_print_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fine_print_auditor}
+      POSTGRES_USER: ${POSTGRES_USER:-auditor_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auditor_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-auditor_user} -d $${POSTGRES_DB:-fine_print_auditor}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - fine_print_network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fine_print_backend
+    restart: unless-stopped
+    environment:
+      APP_NAME: ${APP_NAME:-"AI-Powered Fine Print Auditor"}
+      APP_ENV: ${APP_ENV:-development}
+      DEBUG: ${DEBUG:-True}
+      POSTGRES_SERVER: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-fine_print_auditor}
+      POSTGRES_USER: ${POSTGRES_USER:-auditor_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auditor_password}
+      BACKEND_HOST: 0.0.0.0
+      BACKEND_PORT: 8000
+      SECRET_KEY: ${SECRET_KEY:-default_insecure_development_secret_key}
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - fine_print_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fine_print_frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - fine_print_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  fine_print_network:
+    driver: bridge
