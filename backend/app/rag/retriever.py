@@ -47,7 +47,7 @@ def retrieve_relevant_clauses(
     db: Session,
     question: str,
     document_id: uuid.UUID,
-    top_k: int = 5,
+    top_k: int = 3,
     provider: Optional[BaseEmbeddingProvider] = None,
 ) -> List[Clause]:
     """
@@ -88,3 +88,39 @@ def retrieve_relevant_clauses(
         return all_clauses[:top_k]
 
     return similar_clauses
+
+
+def reindex_all_unembedded_clauses(
+    db: Session,
+    batch_size: int = 50,
+    provider: Optional[BaseEmbeddingProvider] = None,
+) -> int:
+    """
+    Find all clauses in the database with NULL embedding and re-embed them in batches.
+    Used after pgvector dimension migrations to re-index existing documents.
+    Returns total count of clauses re-embedded.
+    """
+    unembedded = db.query(Clause).filter(Clause.embedding == None).order_by(Clause.clause_order).all()
+    if not unembedded:
+        logger.info("All policy clauses already have vector embeddings. No re-indexing needed.")
+        return 0
+
+    emb_provider = provider or get_embedding_provider()
+    logger.info(
+        f"Re-indexing {len(unembedded)} clauses using {emb_provider.__class__.__name__} "
+        f"(model='{getattr(emb_provider, 'model', 'default')}', dim={emb_provider.get_dimension()})..."
+    )
+
+    total_embedded = 0
+    for i in range(0, len(unembedded), batch_size):
+        chunk = unembedded[i : i + batch_size]
+        texts = [c.clause_text for c in chunk]
+        vectors = emb_provider.embed_batch(texts)
+        for clause, vec in zip(chunk, vectors):
+            clause.embedding = vec
+        db.commit()
+        total_embedded += len(chunk)
+        logger.info(f"Re-indexed {total_embedded}/{len(unembedded)} clauses...")
+
+    return total_embedded
+

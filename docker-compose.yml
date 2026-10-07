@@ -1,3 +1,14 @@
+# ==============================================================================
+# AI-Powered Fine Print Auditor - Multi-Container Docker Compose Stack
+# ==============================================================================
+# Startup Flow:
+#   1. db (PostgreSQL 16 + pgvector) starts and initializes extensions
+#   2. db passes health check (pg_isready)
+#   3. backend container starts, verifies DB TCP socket connectivity, runs Alembic migrations
+#   4. backend passes health check (GET /health)
+#   5. frontend container starts with proxy to http://backend:8000
+# ==============================================================================
+
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -11,12 +22,13 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./backend/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-auditor_user} -d $${POSTGRES_DB:-fine_print_auditor}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
     networks:
       - fine_print_network
 
@@ -35,14 +47,27 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-fine_print_auditor}
       POSTGRES_USER: ${POSTGRES_USER:-auditor_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-auditor_password}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-auditor_user}:${POSTGRES_PASSWORD:-auditor_password}@db:5432/${POSTGRES_DB:-fine_print_auditor}
       BACKEND_HOST: 0.0.0.0
       BACKEND_PORT: 8000
       SECRET_KEY: ${SECRET_KEY:-default_insecure_development_secret_key}
-      AI_PROVIDER: ${AI_PROVIDER:-openai}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173"]}
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      AI_MODEL: ${AI_MODEL:-qwen3:4b}
+      AI_TEMPERATURE: ${AI_TEMPERATURE:-0.1}
+      AI_MAX_TOKENS: ${AI_MAX_TOKENS:-2048}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://localhost:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-180}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-ollama}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-qwen3-embedding:0.6b}
+      EMBEDDING_DIMENSION: ${EMBEDDING_DIMENSION:-1024}
+      LOCAL_EMBEDDING_MODEL: ${LOCAL_EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -50,7 +75,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - fine_print_network
 
@@ -61,14 +91,16 @@ services:
     container_name: fine_print_frontend
     restart: unless-stopped
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+      BACKEND_URL: http://backend:8000
+      VITE_API_URL: ${VITE_API_URL:-}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     volumes:
       - ./frontend:/app
       - /app/node_modules
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - fine_print_network
 

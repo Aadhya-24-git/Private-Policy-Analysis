@@ -52,10 +52,12 @@ def check_database_connection() -> dict:
                 "error": None,
             }
     except Exception as exc:
-        logger.warning(f"Database connection check failed: {exc}")
+        from app.core.security import redact_sensitive_string
+        safe_msg = redact_sensitive_string(str(exc))
+        logger.warning(f"Database connection check failed: {safe_msg}")
         return {
             "status": "disconnected",
             "pgvector_installed": False,
             "pgvector_version": None,
-            "error": str(exc),
+            "error": safe_msg,
         }

@@ -165,9 +165,10 @@ export function App() {
    * Execute semantic comparison between two policies
    */
   const handleRunCompare = async (oldDocId, newDocId) => {
-    if (!oldDocId || !newDocId) return;
+    if (!oldDocId || !newDocId || oldDocId === newDocId) return;
     setIsComparing(true);
     setCompareError(null);
+    setComparisonData(null);
     try {
       const result = await comparePolicies(oldDocId, newDocId, true);
       setComparisonData(result);
@@ -177,6 +178,11 @@ export function App() {
     } finally {
       setIsComparing(false);
     }
+  };
+
+  const handleClearComparison = () => {
+    setComparisonData(null);
+    setCompareError(null);
   };
 
   /**
@@ -330,7 +336,11 @@ export function App() {
         selectedDocId={selectedDocId}
         onSelectDoc={selectDocument}
         onNewPolicy={handleNewPolicy}
-        onOpenCompare={() => setViewMode('compare')}
+        onOpenCompare={() => {
+          setViewMode('compare');
+          setComparisonData(null);
+          setCompareError(null);
+        }}
         viewMode={viewMode}
         onOpenSettings={() => setIsSettingsOpen(true)}
         backendConnected={backendConnected}
@@ -345,6 +355,7 @@ export function App() {
             <PolicyCompareView
               documents={documents}
               onCompare={handleRunCompare}
+              onClearComparison={handleClearComparison}
               comparisonData={comparisonData}
               isComparing={isComparing}
               error={compareError}

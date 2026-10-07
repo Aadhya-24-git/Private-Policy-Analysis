@@ -48,7 +48,7 @@ def test_tables_metadata():
     assert "clause_order" in clause_cols
     assert "embedding" in clause_cols
     assert isinstance(clause_cols["embedding"].type, Vector)
-    assert clause_cols["embedding"].type.dim == 1536
+    assert clause_cols["embedding"].type.dim == 1024
 
     # 3. findings table validation
     finding_cols = tables["findings"].columns
@@ -116,3 +116,25 @@ def test_alembic_migration_file_present():
     assert hasattr(module, "downgrade")
     assert module.revision == "0001_initial_tables"
     assert module.down_revision is None
+
+
+def test_alembic_embed_dim_1024_migration_present():
+    """Verify Alembic 0002 migration exists, revision ID <= 32 chars, and chains from 0001."""
+    import importlib.util
+    from pathlib import Path
+
+    migration_file = Path("alembic/versions/2026_10_03_0002_embed_dim_1024.py")
+    if not migration_file.exists():
+        migration_file = Path("backend/alembic/versions/2026_10_03_0002_embed_dim_1024.py")
+    assert migration_file.exists()
+
+    spec = importlib.util.spec_from_file_location("embed_migration", migration_file)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert hasattr(module, "upgrade")
+    assert hasattr(module, "downgrade")
+    assert module.revision == "0002_embed_dim_1024"
+    assert len(module.revision) <= 32, f"Revision ID '{module.revision}' exceeds Alembic VARCHAR(32) limit!"
+    assert module.down_revision == "0001_initial_tables"
+

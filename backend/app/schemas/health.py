@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -10,10 +10,24 @@ class DatabaseHealth(BaseModel):
     error: Optional[str] = Field(default=None, description="Diagnostic error message if disconnected")
 
 
+class OllamaDiagnostics(BaseModel):
+    reachable: bool = Field(default=False, description="Whether Ollama daemon is reachable")
+    base_url: str = Field(description="Configured Ollama base URL")
+    chat_model: str = Field(description="Configured chat model identifier")
+    chat_model_available: bool = Field(default=False, description="Whether configured chat model is installed in Ollama")
+    embedding_model: str = Field(description="Configured embedding model identifier")
+    embedding_model_available: bool = Field(default=False, description="Whether configured embedding model is installed in Ollama")
+    available_models: List[str] = Field(default_factory=list, description="List of all model tags found in Ollama")
+    error: Optional[str] = Field(default=None, description="Diagnostic error message if unreachable")
+
+
 class AIConfigSummary(BaseModel):
-    provider: str = Field(description="Configured active AI provider (e.g. openai, anthropic, ollama, local_qwen)")
+    provider: str = Field(description="Configured active AI provider (e.g. ollama, openai, anthropic, local_qwen)")
     model: str = Field(description="Model identifier")
     embedding_provider: str = Field(description="Embedding provider identifier")
+    embedding_model: Optional[str] = Field(default=None, description="Embedding model identifier")
+    embedding_dimension: Optional[int] = Field(default=None, description="Vector dimension of embeddings")
+    ollama_diagnostics: Optional[OllamaDiagnostics] = Field(default=None, description="Ollama connectivity and model diagnostics")
 
 
 class HealthResponse(BaseModel):

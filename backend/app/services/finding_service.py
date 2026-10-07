@@ -17,10 +17,14 @@ class FindingService:
             explanation=finding_in.explanation,
             validated=finding_in.validated,
         )
-        db.add(db_finding)
-        db.commit()
-        db.refresh(db_finding)
-        return db_finding
+        try:
+            db.add(db_finding)
+            db.commit()
+            db.refresh(db_finding)
+            return db_finding
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def bulk_create(db: Session, findings_in: List[FindingCreate]) -> List[Finding]:
@@ -34,11 +38,15 @@ class FindingService:
             )
             for f in findings_in
         ]
-        db.add_all(db_findings)
-        db.commit()
-        for f in db_findings:
-            db.refresh(f)
-        return db_findings
+        try:
+            db.add_all(db_findings)
+            db.commit()
+            for f in db_findings:
+                db.refresh(f)
+            return db_findings
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def get(db: Session, finding_id: uuid.UUID) -> Optional[Finding]:
@@ -75,6 +83,10 @@ class FindingService:
         if not db_finding:
             return None
         db_finding.validated = validated
-        db.commit()
-        db.refresh(db_finding)
-        return db_finding
+        try:
+            db.commit()
+            db.refresh(db_finding)
+            return db_finding
+        except Exception:
+            db.rollback()
+            raise

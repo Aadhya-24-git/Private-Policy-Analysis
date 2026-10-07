@@ -76,45 +76,74 @@ class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
 class OllamaEmbeddingProvider(BaseEmbeddingProvider):
     """
     Ollama embedding provider for local/private embedding generation.
-    Connects to Ollama daemon via HTTP.
+    Connects to Ollama daemon via HTTP and supports batch embedding via /api/embed.
     """
 
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None, dimension: Optional[int] = None):
         self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
-        self.model = model or settings.OLLAMA_MODEL
+        self.model = model or settings.EMBEDDING_MODEL
         self.dimension = dimension or settings.EMBEDDING_DIMENSION
 
+    def _get_candidate_urls(self) -> list[str]:
+        candidates = [self.base_url]
+        if "host.docker.internal" in self.base_url:
+            candidates.append(self.base_url.replace("host.docker.internal", "127.0.0.1"))
+            candidates.append(self.base_url.replace("host.docker.internal", "localhost"))
+        elif "127.0.0.1" in self.base_url or "localhost" in self.base_url:
+            alt = self.base_url.replace("127.0.0.1", "host.docker.internal").replace("localhost", "host.docker.internal")
+            candidates.append(alt)
+        return candidates
+
     def embed_text(self, text: str) -> List[float]:
-        import httpx
         if not text or not text.strip():
             return [0.0] * self.dimension
-        try:
-            # Try /api/embed (newer Ollama) first
-            res = httpx.post(
-                f"{self.base_url}/api/embed",
-                json={"model": self.model, "input": text},
-                timeout=30.0,
-            )
-            if res.status_code == 200:
-                data = res.json()
-                embeddings = data.get("embeddings") or []
-                if embeddings:
-                    return embeddings[0]
-
-            # Fallback to /api/embeddings
-            res = httpx.post(
-                f"{self.base_url}/api/embeddings",
-                json={"model": self.model, "prompt": text},
-                timeout=30.0,
-            )
-            res.raise_for_status()
-            return res.json()["embedding"]
-        except Exception as e:
-            logger.error(f"Ollama embedding error: {e}")
-            raise LLMProviderError(f"Failed to connect to Ollama at {self.base_url}: {e}") from e
+        embeddings = self.embed_batch([text])
+        if embeddings and len(embeddings) > 0:
+            return embeddings[0]
+        return [0.0] * self.dimension
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        return [self.embed_text(t) for t in texts]
+        import httpx
+        if not texts:
+            return []
+
+        cleaned_texts = [t if t and t.strip() else " " for t in texts]
+
+        last_error = None
+        for url in self._get_candidate_urls():
+            try:
+                # 1. Try modern Ollama /api/embed endpoint supporting batch arrays
+                res = httpx.post(
+                    f"{url}/api/embed",
+                    json={"model": self.model, "input": cleaned_texts},
+                    timeout=60.0,
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    embeddings = data.get("embeddings", [])
+                    if embeddings and len(embeddings) == len(cleaned_texts):
+                        return embeddings
+
+                # 2. Fallback to /api/embeddings in sequence if /api/embed returned 404
+                results = []
+                for t in cleaned_texts:
+                    res_single = httpx.post(
+                        f"{url}/api/embeddings",
+                        json={"model": self.model, "prompt": t},
+                        timeout=30.0,
+                    )
+                    res_single.raise_for_status()
+                    results.append(res_single.json()["embedding"])
+                return results
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                last_error = e
+                logger.debug(f"Could not connect to Ollama embedding endpoint at {url}: {e}")
+                continue
+            except Exception as e:
+                logger.error(f"Ollama embedding error at {url}: {e}")
+                raise LLMProviderError(f"Failed to generate Ollama embedding for model '{self.model}': {e}") from e
+
+        raise LLMProviderError(f"Ollama embedding failed: could not connect to candidate endpoints ({self._get_candidate_urls()}): {last_error}")
 
     def get_dimension(self) -> int:
         return self.dimension

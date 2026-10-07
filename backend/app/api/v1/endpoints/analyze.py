@@ -23,10 +23,29 @@ async def analyze_file(
     file: UploadFile = File(..., description="Document file to analyze (PDF, DOCX, or TXT)"),
     db: Session = Depends(get_db),
 ) -> AnalyzeResponse:
+    from app.core.config import settings
+    from app.extraction.exceptions import FileTooLargeError
+
     if not file.filename:
         raise EmptyDocumentError("No filename provided.")
 
-    file_bytes = await file.read()
+    chunk_size = 1024 * 1024  # 1MB chunks
+    file_bytes_list = []
+    total_bytes = 0
+    max_size = settings.MAX_UPLOAD_SIZE_BYTES
+
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > max_size:
+            raise FileTooLargeError(
+                f"File size exceeds maximum allowed upload limit ({max_size / (1024*1024):.0f} MB)."
+            )
+        file_bytes_list.append(chunk)
+
+    file_bytes = b"".join(file_bytes_list)
     document, clauses = ingest_document_file(
         db=db,
         filename=file.filename,

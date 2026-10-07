@@ -14,10 +14,14 @@ class ChatHistoryService:
             question=chat_in.question,
             answer=chat_in.answer,
         )
-        db.add(db_chat)
-        db.commit()
-        db.refresh(db_chat)
-        return db_chat
+        try:
+            db.add(db_chat)
+            db.commit()
+            db.refresh(db_chat)
+            return db_chat
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def get(db: Session, chat_id: uuid.UUID) -> Optional[ChatHistory]:

@@ -18,6 +18,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Copy entrypoint script to /usr/local/bin, sanitize line endings, and ensure executable
+RUN cp scripts/entrypoint.sh /usr/local/bin/entrypoint.sh \
+    && sed -i 's/\r$//' /usr/local/bin/entrypoint.sh \
+    && chmod +x /usr/local/bin/entrypoint.sh
+
 EXPOSE 8000
+
+HEALTHCHECK --interval=5s --timeout=5s --start-period=15s --retries=5 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

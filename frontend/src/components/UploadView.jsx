@@ -26,19 +26,47 @@ export function UploadView({ onFileUpload, onTextUpload, isUploading = false, up
   const [pastedText, setPastedText] = useState('');
   const [pastedTitle, setPastedTitle] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [clientError, setClientError] = useState(null);
   const fileInputRef = useRef(null);
+
+  const validateAndUpload = (file) => {
+    setClientError(null);
+    if (!file) return;
+
+    // 1. File size check (25 MB max)
+    const MAX_SIZE = 25 * 1024 * 1024;
+    if (file.size === 0) {
+      setClientError("The selected file is empty (0 bytes).");
+      return;
+    }
+    if (file.size > MAX_SIZE) {
+      setClientError(`File size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds 25 MB limit.`);
+      return;
+    }
+
+    // 2. Extension check
+    const allowedExtensions = ['.pdf', '.docx', '.txt'];
+    const lowerName = file.name.toLowerCase();
+    const hasValidExt = allowedExtensions.some((ext) => lowerName.endsWith(ext));
+    if (!hasValidExt) {
+      setClientError("Invalid file type. Only PDF (.pdf), Microsoft Word (.docx), and Plain Text (.txt) files are allowed.");
+      return;
+    }
+
+    onFileUpload(file);
+  };
 
   const handleFileDrop = (e) => {
     e.preventDefault();
     setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onFileUpload(e.dataTransfer.files[0]);
+      validateAndUpload(e.dataTransfer.files[0]);
     }
   };
 
   const handleFileSelect = (e) => {
     if (e.target.files && e.target.files.length > 0) {
-      onFileUpload(e.target.files[0]);
+      validateAndUpload(e.target.files[0]);
     }
   };
 
@@ -96,11 +124,11 @@ export function UploadView({ onFileUpload, onTextUpload, isUploading = false, up
       </div>
 
       {/* Error alert */}
-      {uploadError && (
+      {(uploadError || clientError) && (
         <div className="w-full mb-4 p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-start gap-2">
           <AlertCircle size={15} className="mt-0.5 shrink-0 text-red-500" />
           <div className="flex-1">
-            <span className="font-medium">Upload failed:</span> {uploadError}
+            <span className="font-medium">Validation error:</span> {clientError || uploadError}
           </div>
         </div>
       )}

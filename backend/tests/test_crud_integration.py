@@ -66,9 +66,9 @@ def test_complete_crud_and_cascade_lifecycle(db_session):
     assert updated_doc.status == DocumentStatus.INDEXED
 
     # 2. Create Clauses with pgvector embedding
-    # Mock a 1536-dimensional embedding vector
-    vec_1 = [0.01 * (i % 10) for i in range(1536)]
-    vec_2 = [0.02 * (i % 10) for i in range(1536)]
+    # Mock a 1024-dimensional embedding vector
+    vec_1 = [0.01 * (i % 10) for i in range(1024)]
+    vec_2 = [0.02 * (i % 10) for i in range(1024)]
 
     clause_1_in = ClauseCreate(
         document_id=doc_id,

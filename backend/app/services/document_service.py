@@ -15,10 +15,14 @@ class DocumentService:
             original_text=doc_in.original_text,
             status=doc_in.status,
         )
-        db.add(db_doc)
-        db.commit()
-        db.refresh(db_doc)
-        return db_doc
+        try:
+            db.add(db_doc)
+            db.commit()
+            db.refresh(db_doc)
+            return db_doc
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def get(db: Session, doc_id: uuid.UUID) -> Optional[Document]:
@@ -50,18 +54,26 @@ class DocumentService:
             db_doc.filename = doc_update.filename
         if doc_update.status is not None:
             db_doc.status = doc_update.status
-        db.commit()
-        db.refresh(db_doc)
-        return db_doc
+        try:
+            db.commit()
+            db.refresh(db_doc)
+            return db_doc
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def delete(db: Session, doc_id: uuid.UUID) -> bool:
         db_doc = db.get(Document, doc_id)
         if not db_doc:
             return False
-        db.delete(db_doc)
-        db.commit()
-        return True
+        try:
+            db.delete(db_doc)
+            db.commit()
+            return True
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def count(db: Session) -> int:

@@ -69,5 +69,15 @@ data/raw/*
 .DS_Store
 Thumbs.db
 
+# Test caches and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Secrets and certificates
+*.pem
+*.key
+*.cert
+
 # Docker
-.dockerignore
+# (Keep .dockerignore tracked in repository)

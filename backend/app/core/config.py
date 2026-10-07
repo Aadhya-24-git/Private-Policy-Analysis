@@ -48,36 +48,43 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
     ]
+    MAX_UPLOAD_SIZE_BYTES: int = 25 * 1024 * 1024  # 25 MB
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
+            origins = [i.strip().rstrip("/") for i in v.split(",") if i.strip()]
+            return origins
         elif isinstance(v, str) and v.startswith("["):
-            return json.loads(v)
+            parsed = json.loads(v)
+            return [str(i).strip().rstrip("/") for i in parsed if str(i).strip()]
+        elif isinstance(v, list):
+            return [str(i).strip().rstrip("/") for i in v if str(i).strip()]
         return v
 
     # Modular AI Layer Configuration
-    # Supported: "openai", "anthropic", "ollama", "local_qwen"
-    AI_PROVIDER: str = "openai"
-    AI_MODEL: str = "gpt-4o-mini"
+    # Supported: "ollama", "openai", "anthropic", "local_qwen"
+    AI_PROVIDER: str = "ollama"
+    AI_MODEL: str = "qwen3:4b"
     AI_TEMPERATURE: float = 0.1
     AI_MAX_TOKENS: int = 2048
 
-    # Cloud AI Provider Keys
+    # Cloud AI Provider Keys (Optional fallback when AI_PROVIDER=openai)
     OPENAI_API_KEY: str | None = None
     ANTHROPIC_API_KEY: str | None = None
 
     # Local AI Configuration (Ollama / Local Qwen)
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "qwen2.5:7b"
+    OLLAMA_BASE_URL: str = "http://host.docker.internal:11434"
+    OLLAMA_MODEL: str = "qwen3:4b"
+    OLLAMA_TIMEOUT: float = 180.0
     LOCAL_MODEL_PATH: str = "./models/qwen2.5-7b-instruct.Q4_K_M.gguf"
 
     # Embedding Configuration
-    EMBEDDING_PROVIDER: str = "openai"
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    EMBEDDING_DIMENSION: int = 1536
+    # Supported: "ollama", "openai", "local"
+    EMBEDDING_PROVIDER: str = "ollama"
+    EMBEDDING_MODEL: str = "qwen3-embedding:0.6b"
+    EMBEDDING_DIMENSION: int = 1024
     LOCAL_EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
 
 

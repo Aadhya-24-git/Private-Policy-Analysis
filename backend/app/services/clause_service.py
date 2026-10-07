@@ -18,10 +18,14 @@ class ClauseService:
             clause_order=clause_in.clause_order,
             embedding=clause_in.embedding,
         )
-        db.add(db_clause)
-        db.commit()
-        db.refresh(db_clause)
-        return db_clause
+        try:
+            db.add(db_clause)
+            db.commit()
+            db.refresh(db_clause)
+            return db_clause
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def bulk_create(db: Session, clauses_in: List[ClauseCreate]) -> List[Clause]:
@@ -37,11 +41,15 @@ class ClauseService:
             )
             for c in clauses_in
         ]
-        db.add_all(db_clauses)
-        db.commit()
-        for c in db_clauses:
-            db.refresh(c)
-        return db_clauses
+        try:
+            db.add_all(db_clauses)
+            db.commit()
+            for c in db_clauses:
+                db.refresh(c)
+            return db_clauses
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def get(db: Session, clause_id: uuid.UUID) -> Optional[Clause]:

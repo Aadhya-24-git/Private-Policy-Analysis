@@ -7,6 +7,8 @@ from app.schemas.document import DocumentCreate
 from app.schemas.clause import ClauseCreate
 from app.services.document_service import DocumentService
 from app.services.clause_service import ClauseService
+from app.core.config import settings
+from app.core.security import sanitize_filename, validate_file_content
 from app.extraction.exceptions import (
     FileTooLargeError,
     UnsupportedFileTypeError,
@@ -18,8 +20,8 @@ from app.extraction.extractors import (
     extract_from_plain_text,
 )
 
-# 25 MB max upload size
-MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+# Configurable max upload size (default 25 MB)
+MAX_FILE_SIZE_BYTES = settings.MAX_UPLOAD_SIZE_BYTES
 
 
 def ingest_document_file(
@@ -29,21 +31,19 @@ def ingest_document_file(
 ) -> Tuple[Document, List[Clause]]:
     """
     Unified ingestion pipeline for file uploads (PDF, DOCX, TXT):
-    1. Validates file size (limit: 25 MB).
-    2. Determines format from filename extension and validates format.
-    3. Executes extraction, cleaning, normalization, section detection, and clause segmentation.
-    4. Persists the Document and all associated Clauses to PostgreSQL.
+    1. Sanitizes filename against directory traversal, control chars, and illegal sequences.
+    2. Validates file size, MIME signatures, and executable byte headers.
+    3. Determines format from validated filename extension.
+    4. Executes extraction, cleaning, normalization, section detection, and clause segmentation.
+    5. Persists the Document and all associated Clauses to PostgreSQL.
     """
-    if len(file_bytes) > MAX_FILE_SIZE_BYTES:
-        raise FileTooLargeError(
-            f"File size ({len(file_bytes) / (1024*1024):.2f} MB) exceeds maximum allowed upload limit (25 MB)."
-        )
+    # 1. Sanitize filename & prevent path traversal
+    safe_filename = sanitize_filename(filename)
 
-    _, ext = os.path.splitext(filename.lower())
-    if not ext:
-        raise UnsupportedFileTypeError(
-            "File has no extension. Supported formats are: .pdf, .docx, and .txt."
-        )
+    # 2. Validate file size and content integrity
+    validate_file_content(safe_filename, file_bytes, max_size_bytes=MAX_FILE_SIZE_BYTES)
+
+    _, ext = os.path.splitext(safe_filename.lower())
 
     if ext == ".pdf":
         source_type = SourceType.PDF
@@ -59,9 +59,9 @@ def ingest_document_file(
             f"Unsupported file type '{ext}'. Supported formats are: .pdf, .docx, and .txt."
         )
 
-    # 1. Create Document record in PostgreSQL
+    # 3. Create Document record in PostgreSQL with sanitized filename
     doc_in = DocumentCreate(
-        filename=filename,
+        filename=safe_filename,
         source_type=source_type,
         original_text=normalized_text,
         status=DocumentStatus.INDEXED,
@@ -99,8 +99,14 @@ def ingest_plain_text(
     """
     normalized_text, extracted_clauses = extract_from_plain_text(raw_text)
 
+    safe_title = "Direct Text Submission"
+    if title and title.strip():
+        # Strip control characters and cap length
+        safe_title = "".join(c for c in title if ord(c) >= 32).strip()
+        safe_title = safe_title[:200] if safe_title else "Direct Text Submission"
+
     doc_in = DocumentCreate(
-        filename=title or "Direct Text Submission",
+        filename=safe_title,
         source_type=SourceType.TEXT,
         original_text=normalized_text,
         status=DocumentStatus.INDEXED,

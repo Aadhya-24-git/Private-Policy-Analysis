@@ -43,7 +43,7 @@ class Clause(Base):
         nullable=False,
     )
     embedding: Mapped[Optional[list]] = mapped_column(
-        Vector(1536),
+        Vector(1024),
         nullable=True,
     )
 

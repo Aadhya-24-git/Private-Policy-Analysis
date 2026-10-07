@@ -320,3 +320,110 @@ def test_compare_endpoint_document_not_found(client: TestClient, override_db):
         )
         assert res.status_code == 404
         assert "not found" in res.json()["detail"].lower()
+
+
+def test_compare_selection_regression_and_document_swapping(client: TestClient, override_db):
+    """
+    Regression Test for Issue 2:
+    - selecting document A (Adobe) and document B (Zoom)
+    - changing the selections to document B (Zoom) and document C (Netflix)
+    - clicking Compare
+    - verifying the request contains the new IDs
+    - verifying the result displays the new document names in exact Baseline -> Updated direction
+    """
+    doc_a_id = uuid.uuid4()
+    doc_b_id = uuid.uuid4()
+    doc_c_id = uuid.uuid4()
+
+    doc_a_name = "Adobe privacy policy"
+    doc_b_name = "Zoom privacy policy"
+    doc_c_name = "Netflix privacy policy.pdf"
+
+    # 1. Compare Doc A -> Doc B
+    resp_ab = PolicyCompareResponse(
+        old_document_id=doc_a_id,
+        new_document_id=doc_b_id,
+        old_document_name=doc_a_name,
+        new_document_name=doc_b_name,
+        summary={
+            "total_old_clauses": 5,
+            "total_new_clauses": 5,
+            "added_count": 0,
+            "removed_count": 0,
+            "modified_count": 1,
+            "unchanged_count": 4,
+            "overview": "Adobe -> Zoom comparison",
+        },
+        modified_clauses=[],
+        added_clauses=[],
+        removed_clauses=[],
+        unchanged_count=4,
+    )
+
+    with patch("app.api.v1.endpoints.compare.PolicyComparisonService.compare_documents", return_value=resp_ab) as mock_compare:
+        res = client.post(
+            "/api/v1/compare",
+            json={
+                "old_document_id": str(doc_a_id),
+                "new_document_id": str(doc_b_id),
+                "explain_changes": True,
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["old_document_id"] == str(doc_a_id)
+        assert data["new_document_id"] == str(doc_b_id)
+        assert data["old_document_name"] == doc_a_name
+        assert data["new_document_name"] == doc_b_name
+        mock_compare.assert_called_once_with(
+            db=override_db,
+            old_document_id=doc_a_id,
+            new_document_id=doc_b_id,
+            explain_changes=True,
+        )
+
+    # 2. Change selections to Doc B -> Doc C (simulating user changing dropdowns)
+    resp_bc = PolicyCompareResponse(
+        old_document_id=doc_b_id,
+        new_document_id=doc_c_id,
+        old_document_name=doc_b_name,
+        new_document_name=doc_c_name,
+        summary={
+            "total_old_clauses": 5,
+            "total_new_clauses": 6,
+            "added_count": 1,
+            "removed_count": 0,
+            "modified_count": 2,
+            "unchanged_count": 3,
+            "overview": "Zoom -> Netflix comparison",
+        },
+        modified_clauses=[],
+        added_clauses=[],
+        removed_clauses=[],
+        unchanged_count=3,
+    )
+
+    with patch("app.api.v1.endpoints.compare.PolicyComparisonService.compare_documents", return_value=resp_bc) as mock_compare_bc:
+        res = client.post(
+            "/api/v1/compare",
+            json={
+                "old_document_id": str(doc_b_id),
+                "new_document_id": str(doc_c_id),
+                "explain_changes": True,
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()
+        # Verify result contains the NEW IDs and NEW document names, not stale ones
+        assert data["old_document_id"] == str(doc_b_id)
+        assert data["new_document_id"] == str(doc_c_id)
+        assert data["old_document_name"] == doc_b_name
+        assert data["new_document_name"] == doc_c_name
+        assert data["old_document_id"] != str(doc_a_id)
+        mock_compare_bc.assert_called_once_with(
+            db=override_db,
+            old_document_id=doc_b_id,
+            new_document_id=doc_c_id,
+            explain_changes=True,
+        )
+

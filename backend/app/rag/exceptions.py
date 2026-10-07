@@ -21,3 +21,8 @@ class AIConfigurationError(RAGException):
 class LLMProviderError(RAGException):
     """Raised when an external LLM provider encounters an error."""
     pass
+
+
+class LLMTimeoutError(LLMProviderError):
+    """Raised when an LLM provider request times out."""
+    pass

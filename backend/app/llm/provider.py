@@ -2,7 +2,8 @@ import logging
 from typing import Any, Dict, Optional
 from app.core.config import settings
 from app.llm.base import BaseLLMClient
-from app.rag.exceptions import AIConfigurationError, LLMProviderError
+from app.rag.exceptions import AIConfigurationError, LLMProviderError, LLMTimeoutError
+from app.llm.scaffolding import clean_model_scaffolding
 
 logger = logging.getLogger(__name__)
 
@@ -176,58 +177,237 @@ class AnthropicClient(BaseLLMClient):
 
 class OllamaClient(BaseLLMClient):
     """
-    Local Ollama client for running models such as Qwen2.5, Llama 3, or Mistral privately.
+    Local Ollama client for running models such as Qwen (e.g. qwen3:4b) privately.
+    Supports /api/chat with fallback to /api/generate and automatic network resolution.
     """
 
-    def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None):
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ):
         self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
-        self.model = model or settings.OLLAMA_MODEL
+        self.model = model or settings.AI_MODEL or settings.OLLAMA_MODEL
+        self.timeout = float(timeout if timeout is not None else settings.OLLAMA_TIMEOUT)
+
+    def _get_candidate_urls(self) -> list[str]:
+        candidates = [self.base_url]
+        if "host.docker.internal" in self.base_url:
+            candidates.append(self.base_url.replace("host.docker.internal", "127.0.0.1"))
+            candidates.append(self.base_url.replace("host.docker.internal", "localhost"))
+        elif "127.0.0.1" in self.base_url or "localhost" in self.base_url:
+            alt = self.base_url.replace("127.0.0.1", "host.docker.internal").replace("localhost", "host.docker.internal")
+            candidates.append(alt)
+        return candidates
 
     def generate(self, prompt: str, system_prompt: Optional[str] = None, **kwargs: Any) -> str:
         import httpx
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        prefill_answer = kwargs.get("prefill_answer", False)
+        if prefill_answer:
+            messages.append({"role": "assistant", "content": "Answer:\n"})
+
+        options = {
+            "temperature": kwargs.get("temperature", settings.AI_TEMPERATURE),
+            "num_predict": kwargs.get("num_predict", kwargs.get("max_tokens", 450)),
+        }
+        if "stop" in kwargs:
+            options["stop"] = kwargs["stop"]
+        else:
+            options["stop"] = ["<|im_end|>", "<|im_start|>", "<think>", "\nuser\n", "\nContext:"]
+
         payload = {
             "model": self.model,
             "prompt": prompt,
+            "messages": messages,
             "stream": False,
-            "options": {
-                "temperature": kwargs.get("temperature", settings.AI_TEMPERATURE),
-            },
+            "think": kwargs.get("think", False),
+            "options": options,
         }
         if system_prompt:
             payload["system"] = system_prompt
 
-        try:
-            res = httpx.post(f"{self.base_url}/api/generate", json=payload, timeout=60.0)
-            res.raise_for_status()
-            return res.json().get("response", "")
-        except Exception as e:
-            logger.error(f"Ollama generation error: {e}")
-            raise LLMProviderError(f"Ollama generation failed at {self.base_url}: {e}") from e
+        timeout_config = httpx.Timeout(timeout=self.timeout, connect=5.0)
+        last_error = None
+        for url in self._get_candidate_urls():
+            try:
+                # 1. Post to Ollama /api/chat (optimized for Qwen conversational reasoning)
+                res = httpx.post(f"{url}/api/chat", json=payload, timeout=timeout_config)
+                if res.status_code == 200:
+                    data = res.json()
+                    content = ""
+                    if isinstance(data.get("message"), dict):
+                        content = data["message"].get("content", "")
+                    if not content and "response" in data:
+                        content = data.get("response", "")
+                    if not content and "thinking" in data:
+                        raw_thinking = data.get("thinking", "")
+                        if "answer:" in raw_thinking.lower():
+                            content = raw_thinking
+                    if content:
+                        if prefill_answer and not content.strip().lower().startswith("answer:"):
+                            content = "Answer:\n" + content.lstrip()
+                        return clean_model_scaffolding(content)
+
+                # 2. Fallback to /api/generate if /api/chat returned 404
+                if res.status_code == 404:
+                    res_gen = httpx.post(f"{url}/api/generate", json=payload, timeout=timeout_config)
+                    res_gen.raise_for_status()
+                    gen_data = res_gen.json()
+                    raw = gen_data.get("response", "") or (
+                        gen_data.get("message", {}).get("content", "")
+                        if isinstance(gen_data.get("message"), dict)
+                        else ""
+                    )
+                    if prefill_answer and raw and not raw.strip().lower().startswith("answer:"):
+                        raw = "Answer:\n" + raw.lstrip()
+                    return clean_model_scaffolding(raw)
+
+                res.raise_for_status()
+                data = res.json()
+                raw = data.get("response", "") or (
+                    data.get("message", {}).get("content", "")
+                    if isinstance(data.get("message"), dict)
+                    else ""
+                )
+                if prefill_answer and raw and not raw.strip().lower().startswith("answer:"):
+                    raw = "Answer:\n" + raw.lstrip()
+                return clean_model_scaffolding(raw)
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                last_error = e
+                logger.debug(f"Could not connect to Ollama at {url}: {e}. Trying fallback candidates...")
+                continue
+            except httpx.ReadTimeout as e:
+                logger.error(f"Ollama generation timed out after {self.timeout}s at {url}: {e}")
+                raise LLMTimeoutError(
+                    f"Ollama model '{self.model}' generation timed out after {int(self.timeout)} seconds. "
+                    "The legal document analysis took longer than expected to complete. "
+                    "Please retry with a more specific question, or increase OLLAMA_TIMEOUT in your environment."
+                ) from e
+            except httpx.TimeoutException as e:
+                logger.error(f"Ollama request timed out after {self.timeout}s at {url}: {e}")
+                raise LLMTimeoutError(
+                    f"Ollama request timed out after {int(self.timeout)} seconds: {e}"
+                ) from e
+            except Exception as e:
+                logger.error(f"Ollama generation error at {url}: {e}")
+                raise LLMProviderError(f"Ollama generation failed with model '{self.model}': {e}") from e
+
+        raise LLMProviderError(f"Ollama generation failed: could not connect to candidate endpoints ({self._get_candidate_urls()}): {last_error}")
 
     async def agenerate(self, prompt: str, system_prompt: Optional[str] = None, **kwargs: Any) -> str:
         import httpx
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        prefill_answer = kwargs.get("prefill_answer", False)
+        if prefill_answer:
+            messages.append({"role": "assistant", "content": "Answer:\n"})
+
+        options = {
+            "temperature": kwargs.get("temperature", settings.AI_TEMPERATURE),
+            "num_predict": kwargs.get("num_predict", kwargs.get("max_tokens", 450)),
+        }
+        if "stop" in kwargs:
+            options["stop"] = kwargs["stop"]
+        else:
+            options["stop"] = ["<|im_end|>", "<|im_start|>", "<think>", "\nuser\n", "\nContext:"]
+
         payload = {
             "model": self.model,
             "prompt": prompt,
+            "messages": messages,
             "stream": False,
-            "options": {
-                "temperature": kwargs.get("temperature", settings.AI_TEMPERATURE),
-            },
+            "think": kwargs.get("think", False),
+            "options": options,
         }
         if system_prompt:
             payload["system"] = system_prompt
 
-        try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                res = await client.post(f"{self.base_url}/api/generate", json=payload)
-                res.raise_for_status()
-                return res.json().get("response", "")
-        except Exception as e:
-            logger.error(f"Ollama async generation error: {e}")
-            raise LLMProviderError(f"Ollama async generation failed at {self.base_url}: {e}") from e
+        timeout_config = httpx.Timeout(timeout=self.timeout, connect=5.0)
+        last_error = None
+        for url in self._get_candidate_urls():
+            try:
+                async with httpx.AsyncClient(timeout=timeout_config) as client:
+                    res = await client.post(f"{url}/api/chat", json=payload)
+                    if res.status_code == 200:
+                        data = res.json()
+                        content = ""
+                        if isinstance(data.get("message"), dict):
+                            content = data["message"].get("content", "")
+                        if not content and "response" in data:
+                            content = data.get("response", "")
+                        if not content and "thinking" in data:
+                            raw_thinking = data.get("thinking", "")
+                            if "answer:" in raw_thinking.lower():
+                                content = raw_thinking
+                        if content:
+                            if prefill_answer and not content.strip().lower().startswith("answer:"):
+                                content = "Answer:\n" + content.lstrip()
+                            return clean_model_scaffolding(content)
+
+                    if res.status_code == 404:
+                        res_gen = await client.post(f"{url}/api/generate", json=payload)
+                        res_gen.raise_for_status()
+                        gen_data = res_gen.json()
+                        raw = gen_data.get("response", "") or (
+                            gen_data.get("message", {}).get("content", "")
+                            if isinstance(gen_data.get("message"), dict)
+                            else ""
+                        )
+                        if prefill_answer and raw and not raw.strip().lower().startswith("answer:"):
+                            raw = "Answer:\n" + raw.lstrip()
+                        return clean_model_scaffolding(raw)
+
+                    res.raise_for_status()
+                    data = res.json()
+                    raw = data.get("response", "") or (
+                        data.get("message", {}).get("content", "")
+                        if isinstance(data.get("message"), dict)
+                        else ""
+                    )
+                    if prefill_answer and raw and not raw.strip().lower().startswith("answer:"):
+                        raw = "Answer:\n" + raw.lstrip()
+                    return clean_model_scaffolding(raw)
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                last_error = e
+                logger.debug(f"Could not connect to Ollama at {url}: {e}. Trying fallback candidates...")
+                continue
+            except httpx.ReadTimeout as e:
+                logger.error(f"Ollama async generation timed out after {self.timeout}s at {url}: {e}")
+                raise LLMTimeoutError(
+                    f"Ollama model '{self.model}' generation timed out after {int(self.timeout)} seconds. "
+                    "The legal document analysis took longer than expected to complete. "
+                    "Please retry with a more specific question, or increase OLLAMA_TIMEOUT in your environment."
+                ) from e
+            except httpx.TimeoutException as e:
+                logger.error(f"Ollama async request timed out after {self.timeout}s at {url}: {e}")
+                raise LLMTimeoutError(
+                    f"Ollama request timed out after {int(self.timeout)} seconds: {e}"
+                ) from e
+            except Exception as e:
+                logger.error(f"Ollama async generation error at {url}: {e}")
+                raise LLMProviderError(f"Ollama async generation failed with model '{self.model}': {e}") from e
+
+        raise LLMProviderError(f"Ollama async generation failed: could not connect to candidate endpoints: {last_error}")
 
     def get_model_info(self) -> Dict[str, Any]:
-        return {"provider": "ollama", "model": self.model, "base_url": self.base_url, "type": "local"}
+        return {
+            "provider": "ollama",
+            "model": self.model,
+            "base_url": self.base_url,
+            "timeout": self.timeout,
+            "type": "local",
+        }
 
 
 class LocalQwenClient(BaseLLMClient):

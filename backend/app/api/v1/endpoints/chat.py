@@ -18,6 +18,7 @@ from app.rag.exceptions import (
     EmptyContextError,
     AIConfigurationError,
     LLMProviderError,
+    LLMTimeoutError,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,8 @@ async def ask_document_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except AIConfigurationError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except LLMTimeoutError as e:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(e))
     except LLMProviderError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
     except ValueError as e:
@@ -89,6 +92,8 @@ async def chat_ask_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except AIConfigurationError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
+    except LLMTimeoutError as e:
+        raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(e))
     except LLMProviderError as e:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
     except ValueError as e:
