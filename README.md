@@ -1,22 +1,83 @@
 # AI-Powered Fine Print Auditor
 
-> Autonomous legal intelligence engine designed to analyze complex Terms of Service, Privacy Policies, and EULAs to surface predatory clauses, hidden privacy risks, and unfair terms.
+> Autonomous legal intelligence engine designed to analyze complex Terms of Service, Privacy Policies, and EULAs to surface hidden privacy risks, potentially unfair clauses, and important legal terms.
 
 ---
 
-## 📌 Phase 0 Foundation Overview
+## 📌 Project Overview
 
-Phase 0 establishes the containerized foundation and core architectural skeleton for the project. No advanced AI, RAG, chatbot, or browser extensions are active in this phase—only the verified, production-ready operational baseline.
+The AI-Powered Fine Print Auditor is an intelligent document analysis system that helps users understand complex privacy policies and legal documents.
 
-### Key Technology Stack:
-- **Backend:** Python 3.13 + FastAPI, Uvicorn
-- **Database:** PostgreSQL 16 with `pgvector` vector extension
-- **Database Driver:** `psycopg` (psycopg 3 binary)
-- **ORM:** SQLAlchemy 2.0 (Declarative Base)
-- **Database Migrations:** Alembic
-- **Frontend:** React 18 + Vite, modern Vanilla CSS design system
-- **Containerization:** Docker & Docker Compose
-- **Modular AI Layer:** Abstract provider interface supporting OpenAI, Anthropic, Ollama, and local GGUF/Qwen models
+The system analyzes uploaded policy documents, identifies potentially risky clauses, provides evidence from the original document, answers policy-related questions using document-grounded AI, and compares different versions of policies.
+
+The project combines rule-based risk detection, Retrieval-Augmented Generation (RAG), vector similarity search, local Qwen3 AI, and PostgreSQL with pgvector.
+
+---
+
+## ✨ Key Features
+
+- **📄 Document Upload & Extraction** — Supports PDF, DOCX, TXT, and pasted policy text.
+- **⚠️ Risk Detection** — Detects Auto-Renewal, Hidden Fees, Arbitration, Data Sharing, Cancellation, Data Retention, and Liability clauses.
+- **🔎 Evidence-Based Findings** — Every detected finding is linked to the original policy clause and its source information.
+- **🤖 Policy Q&A** — Ask questions about an uploaded policy and receive answers grounded in the document.
+- **🧠 RAG & Vector Search** — Retrieves relevant policy clauses using semantic similarity search.
+- **💬 Chat History** — Maintains questions and answers associated with analyzed policies.
+- **📊 Policy Comparison** — Compares two policy versions and identifies added, removed, modified, and unchanged clauses.
+- **🔐 Security Hardening** — Includes file validation, path traversal protection, upload limits, prompt injection isolation, credential redaction, safe error handling, and security headers.
+- **🐳 Docker Deployment** — Runs the frontend, backend, and PostgreSQL database using Docker Compose.
+- **🧪 Automated Testing** — Includes comprehensive backend tests and frontend build validation.
+- **💻 Local AI Processing** — Uses Ollama with Qwen3:4b for local policy analysis and Qwen3 Embedding 0.6B for embeddings.
+
+---
+
+## 🛠️ Technology Stack
+
+### Backend
+
+- Python 3.13
+- FastAPI
+- Uvicorn
+- SQLAlchemy 2.0
+- Pydantic
+
+### Database
+
+- PostgreSQL 16
+- pgvector
+- psycopg 3
+
+### Database Migrations
+
+- Alembic
+
+### Frontend
+
+- React
+- Vite
+- Modern Vanilla CSS
+
+### AI / RAG
+
+- Ollama
+- Qwen3:4b
+- Qwen3 Embedding 0.6B
+- Retrieval-Augmented Generation
+- Vector Similarity Search
+
+### Document Processing
+
+- PyMuPDF
+- python-docx
+
+### Deployment
+
+- Docker
+- Docker Compose
+
+### Testing
+
+- Pytest
+- Frontend production build validation
 
 ---
 
@@ -26,189 +87,291 @@ Phase 0 establishes the containerized foundation and core architectural skeleton
 fine-print-auditor/
 ├── backend/
 │   ├── app/
-│   │   ├── api/             # API versioning & endpoint routers
+│   │   ├── api/
 │   │   │   └── v1/
-│   │   │       ├── endpoints/
-│   │   │       │   └── health.py    # GET /health implementation
-│   │   │       └── api.py
-│   │   ├── core/            # Configuration (Pydantic BaseSettings)
-│   │   │   └── config.py
-│   │   ├── database/        # Engine, session factory & connection diagnostics
+│   │   │       └── endpoints/
+│   │   │           ├── analyze.py
+│   │   │           ├── chat.py
+│   │   │           ├── compare.py
+│   │   │           ├── documents.py
+│   │   │           └── health.py
+│   │   ├── analysis/
+│   │   │   └── rules/
+│   │   │       ├── auto_renewal.py
+│   │   │       ├── hidden_fees.py
+│   │   │       ├── arbitration.py
+│   │   │       ├── data_sharing.py
+│   │   │       ├── cancellation.py
+│   │   │       ├── data_retention.py
+│   │   │       └── liability.py
+│   │   ├── comparison/
+│   │   │   ├── matcher.py
+│   │   │   ├── explainer.py
+│   │   │   └── service.py
+│   │   ├── core/
+│   │   │   ├── config.py
+│   │   │   └── security.py
+│   │   ├── database/
 │   │   │   ├── base.py
 │   │   │   └── session.py
-│   │   ├── models/          # SQLAlchemy Declarative models & mixins
-│   │   │   └── base.py
-│   │   ├── schemas/         # Pydantic validation schemas
-│   │   │   └── health.py
-│   │   ├── services/        # Business logic services (Phase 1+)
-│   │   ├── extraction/      # Document ingestion & parsing (Phase 1+)
-│   │   ├── analysis/        # Risk scoring & predatory detection (Phase 2+)
-│   │   ├── rag/             # Retrieval-Augmented Generation & vector search (Phase 2+)
-│   │   ├── llm/             # Modular LLM & embedding providers (OpenAI / Ollama / Qwen)
+│   │   ├── extraction/
+│   │   ├── llm/
 │   │   │   ├── base.py
 │   │   │   ├── provider.py
 │   │   │   └── embeddings.py
-│   │   ├── utils/           # Utilities & structured logger
-│   │   │   └── logger.py
-│   │   └── main.py          # FastAPI application entrypoint
-│   ├── tests/               # Pytest automated test suite
-│   ├── alembic/             # Database migration scripts
-│   ├── alembic.ini          # Alembic configuration
-│   ├── Dockerfile           # Backend container build specification
-│   └── requirements.txt     # Python dependencies
+│   │   ├── models/
+│   │   ├── rag/
+│   │   │   ├── retriever.py
+│   │   │   ├── context.py
+│   │   │   └── qa_service.py
+│   │   ├── schemas/
+│   │   ├── services/
+│   │   ├── utils/
+│   │   └── main.py
+│   ├── tests/
+│   ├── alembic/
+│   ├── scripts/
+│   ├── Dockerfile
+│   └── requirements.txt
+│
 ├── frontend/
 │   ├── src/
-│   │   ├── components/      # React UI components (Health diagnostics, specs, roadmap)
-│   │   ├── pages/           # Application views (Dashboard)
-│   │   ├── services/        # API client routines
-│   │   ├── hooks/           # Custom React hooks (useHealth telemetry)
-│   │   ├── utils/           # App constants & helpers
+│   │   ├── components/
+│   │   │   ├── Sidebar.jsx
+│   │   │   ├── DocumentHeader.jsx
+│   │   │   ├── UploadView.jsx
+│   │   │   ├── FindingsList.jsx
+│   │   │   ├── RiskBadge.jsx
+│   │   │   ├── ChatStream.jsx
+│   │   │   ├── ChatComposer.jsx
+│   │   │   ├── PolicyCompareView.jsx
+│   │   │   └── SettingsModal.jsx
+│   │   ├── services/
 │   │   ├── App.jsx
-│   │   ├── main.jsx
-│   │   └── index.css        # Glassmorphic dark cyber theme
+│   │   └── index.css
 │   ├── index.html
-│   ├── vite.config.js       # Vite configuration with backend reverse proxy
+│   ├── vite.config.js
 │   ├── package.json
-│   └── Dockerfile           # Frontend container build specification
-├── extension/               # Chrome Extension (Phase 4 placeholder)
-├── data/                    # Privacy policy dataset storage
-├── models/                  # Local GGUF/quantized weights storage
-├── docker-compose.yml       # Multi-container orchestration (db, backend, frontend)
-├── .env.example             # Environment configuration template
-├── .gitignore               # Comprehensive Git exclusions
-└── README.md                # Project documentation
-```
+│   └── Dockerfile
+│
+├── data/
+├── models/
+├── docker-compose.yml
+├── .env.example
+├── .gitignore
+└── README.md
+⚙️ Environment Configuration
+The current system uses Ollama for local AI processing.
+AI_PROVIDER=ollama
+AI_MODEL=qwen3:4b
 
----
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_MODEL=qwen3-embedding:0.6b
+EMBEDDING_DIMENSION=1024
 
-## ⚙️ Environment Configuration
+OLLAMA_TIMEOUT=180
 
-1. Copy `.env.example` to create `.env`:
-   ```bash
-   cp .env.example .env
-   ```
-2. Update the environment variables if necessary. All credentials and paths are parameterized without hardcoded secrets.
+The backend communicates with Ollama running on the host machine through:
+http://host.docker.internal:11434
 
----
+🚀 Running with Docker Compose
+Ensure Docker Desktop is running.
+1. Start all services
+docker compose up --build
 
-## 🚀 Running with Docker Compose (Recommended)
+Or run in detached mode:
+docker compose up -d --build
 
-Ensure Docker Desktop (or Docker Engine with Docker Compose) is running on your machine:
+The application starts:
+- PostgreSQL + pgvector
+- FastAPI backend
+- React frontend
+Database migrations are automatically applied during backend startup.
+2. Access the services
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- Swagger Documentation: http://localhost:8000/docs
+- Health Check: http://localhost:8000/health
+- PostgreSQL: localhost:5432
+3. Check container status
+docker compose ps
 
-1. **Start all services (Database, Backend, and Frontend):**
-   ```bash
-   docker compose up --build
-   ```
-   Or in detached background mode:
-   ```bash
-   docker compose up -d --build
-   ```
+4. View logs
+docker compose logs -f
 
-2. **Access the services:**
-   - **Frontend UI:** [http://localhost:3000](http://localhost:3000)
-   - **Backend API:** [http://localhost:8000](http://localhost:8000)
-   - **Interactive API Documentation (Swagger):** [http://localhost:8000/docs](http://localhost:8000/docs)
-   - **Health Endpoint:** [http://localhost:8000/health](http://localhost:8000/health)
-   - **PostgreSQL + pgvector:** `localhost:5432`
+For backend logs:
+docker compose logs -f backend
 
-3. **Check container logs:**
-   ```bash
-   docker compose logs -f
-   ```
+5. Stop the application
+docker compose down
 
-4. **Stop the environment:**
-   ```bash
-   docker compose down
-   ```
-
----
-
-## 💻 Running Locally (Development Mode)
-
-### 1. Database
-Run PostgreSQL with the `pgvector` extension via Docker:
-```bash
-docker run -d --name fine_print_db -p 5432:5432 -e POSTGRES_DB=fine_print_auditor -e POSTGRES_USER=auditor_user -e POSTGRES_PASSWORD=auditor_password pgvector/pgvector:pg16
-```
-
-### 2. Backend (FastAPI)
-```bash
+💻 Running Locally
+Backend
 cd backend
 python -m venv .venv
-# On Windows:
+
+Windows:
 .venv\Scripts\activate
-# On Linux/macOS:
-# source .venv/bin/activate
 
+Linux/macOS:
+source .venv/bin/activate
+
+Install dependencies:
 pip install -r requirements.txt
+
+Run the backend:
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
 
-Run test suite:
-```bash
-pytest
-```
-
-### 3. Frontend (React + Vite)
-```bash
+Frontend
 cd frontend
 npm install
 npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
 
----
+Open:
+http://localhost:3000
 
-## 🩺 Health Check API (`GET /health`)
+Run Tests
+cd backend
+pytest
 
-The health endpoint provides instant operational verification of the FastAPI server, database connection, pgvector status, and modular AI subsystem.
+🔌 API Endpoints
+Document Analysis
+POST /api/v1/analyze/file
+POST /api/v1/analyze/text
 
-### Request:
-```http
-GET /health HTTP/1.1
-Host: localhost:8000
-Accept: application/json
-```
+Uploads and analyzes policy documents or supplied text.
+Policy Audit
+GET /api/v1/documents/{document_id}/audit
+GET /api/v1/documents/{document_id}/findings
 
-### Sample Response (`200 OK`):
-```json
-{
-  "status": "healthy",
-  "app_name": "AI-Powered Fine Print Auditor",
-  "environment": "development",
-  "version": "0.1.0",
-  "timestamp": "2026-10-03T09:30:00.000000Z",
-  "database": {
-    "status": "connected",
-    "pgvector_installed": true,
-    "pgvector_version": "0.7.4",
-    "error": null
-  },
-  "ai_subsystem": {
-    "provider": "openai",
-    "model": "gpt-4o-mini",
-    "embedding_provider": "openai"
-  }
-}
-```
+Retrieves detected risks and findings.
+Policy Q&A
+POST /api/v1/documents/{document_id}/ask
+POST /api/v1/documents/{document_id}/chat
+POST /api/v1/chat/ask
 
----
+Provides document-grounded policy questions and answers.
+Policy Comparison
+POST /api/v1/compare
 
-## 🧠 Modular AI Layer Architecture
+Compares two policy documents or policy versions.
+Health Check
+GET /health
 
-The auditor is built for complete privacy-first independence:
-- **Cloud Mode:** Set `AI_PROVIDER=openai` or `AI_PROVIDER=anthropic` in `.env` along with your API key.
-- **Local / Offline Mode:** Set `AI_PROVIDER=ollama` and `OLLAMA_MODEL=qwen2.5:7b` to run entirely on local infrastructure with zero telemetry or data leakage.
-- **Embeddings:** Seamlessly switch between OpenAI (`text-embedding-3-small`) and local sentence-transformers (`sentence-transformers/all-MiniLM-L6-v2`).
+Checks backend and database availability.
+🧠 RAG & AI Architecture
+                 Policy Document
+                       │
+                       ▼
+              Document Extraction
+                       │
+                       ▼
+                 Clause Splitting
+                       │
+                       ▼
+              Qwen3 Embedding 0.6B
+                       │
+                       ▼
+              PostgreSQL + pgvector
+                       │
+                       ▼
+               Semantic Retrieval
+                       │
+                       ▼
+                Relevant Clauses
+                       │
+                       ▼
+                  Qwen3:4b
+                    Ollama
+                       │
+                       ▼
+               Grounded Response
 
----
+The RAG system retrieves relevant clauses from the analyzed policy before generating an answer.
+The AI is instructed to answer only using the supplied policy content. If the requested information is not present in the available clauses, the system returns:
+Based on the provided policy clauses, this information is not specified in the document.
 
-## 🗺️ Implementation Roadmap
+This reduces unsupported or hallucinated answers.
+⚠️ Risk Detection Engine
+The rule-based analysis engine currently detects seven categories:
+Category	Description
+Auto-Renewal	Detects automatic subscription or contract renewal
+Hidden Fees	Identifies additional or unexpected charges
+Arbitration	Detects mandatory arbitration clauses
+Data Sharing	Identifies sharing of user information
+Cancellation	Detects cancellation conditions and restrictions
+Data Retention	Identifies data retention practices
+Liability	Detects liability limitations
 
-| Phase | Milestone | Focus |
-|---|---|---|
-| **Phase 0** | **Foundation** *(Current)* | FastAPI, PostgreSQL + pgvector, React, Docker Compose, Health Telemetry |
-| **Phase 1** | **Ingestion & Extraction** | Policy crawler, document clean-up, hierarchical chunking |
-| **Phase 2** | **Risk Scoring & RAG** | Vector embeddings, pgvector similarity, unfair term classification |
-| **Phase 3** | **Interactive Auditor** | Multi-turn conversational Q&A, clause comparison engine |
-| **Phase 4** | **Chrome Extension** | Browser extension (Manifest V3) for automated in-browser policy auditing |
+
+Every finding maintains a connection to its original policy clause.
+📊 Policy Comparison
+The policy comparison engine compares two versions of a policy and identifies:
+- Added clauses
+- Removed clauses
+- Modified clauses
+- Unchanged clauses
+The matching process uses:
+- Normalized text comparison
+- Semantic similarity
+- Lexical similarity
+- Clause matching
+- Deterministic token-level differences
+- Grounded AI explanations
+The frontend also prevents stale comparison results from being displayed when the selected documents are changed.
+🔐 Security
+The application includes security protections for both uploaded documents and AI processing.
+Implemented protections include:
+- Filename sanitization
+- Path traversal protection
+- File type validation
+- File size limits
+- Chunked upload protection
+- DOCX Zip Slip protection
+- CORS restrictions
+- Security headers
+- Prompt injection isolation
+- Credential redaction
+- Safe error handling
+- Database transaction rollback handling
+- Safe frontend rendering
+🧪 Testing & Validation
+The project includes automated tests for:
+- Document extraction
+- Rule-based risk detection
+- RAG retrieval
+- Embedding generation
+- AI provider behavior
+- Policy Q&A
+- Policy comparison
+- Security validation
+- API endpoints
+- Docker integration
+- Regression cases
+Latest verified backend test result:
+127 passed
+6 skipped
+
+Frontend production build was also successfully validated using:
+npm run build
+
+📊 Current Implementation Status
+Component	Status
+Document Upload & Extraction	✅ Complete
+PDF / DOCX / TXT Support	✅ Complete
+Rule-Based Risk Detection	✅ Complete
+RAG & Vector Search	✅ Complete
+Qwen3:4b Local AI	✅ Complete
+Qwen3 Embeddings	✅ Complete
+Policy Q&A	✅ Complete
+Chat History	✅ Complete
+Policy Comparison	✅ Complete
+Security Hardening	✅ Complete
+Docker Deployment	✅ Complete
+Automated Testing	✅ Complete
+
+
+🎯 Project Objective
+The objective of the AI-Powered Fine Print Auditor is to make complex legal and privacy documents easier to understand by identifying potentially risky clauses, explaining their meaning in simple language, and providing evidence directly from the original document.
+The system focuses on:
+Transparency → Evidence → Explainability → Privacy → Document-Grounded AI
